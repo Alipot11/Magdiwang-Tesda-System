@@ -30,7 +30,9 @@ const requireLogin = (req, res, next) =>
   req.session.user ? next() : res.status(401).json({ error: 'Login required' });
 
 app.get('/api/me', requireLogin, (req, res) => res.json(req.session.user));
-// Feature routes go here later, e.g. app.use('/api/courses', requireLogin, require('./routes/courses'));
+
+// Feature routes go here, e.g. app.use('/api/courses', requireLogin, require('./routes/courses'));
+app.use('/api/courses', requireLogin, require('./routes/courses'));
 
 // Frontend
 app.get('/', (req, res) =>
