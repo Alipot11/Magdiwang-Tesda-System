@@ -33,6 +33,8 @@ app.get('/api/me', requireLogin, (req, res) => res.json(req.session.user));
 // Feature routes go here later, e.g. app.use('/api/courses', requireLogin, require('./routes/courses'));
 
 // Frontend
+app.get('/', (req, res) =>
+  res.redirect(req.session.user ? '/index.html' : '/login.html'));
 app.use(express.static(path.join(__dirname, 'public')));
 
 // '0.0.0.0' lets other PCs on your network connect

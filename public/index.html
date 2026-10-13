@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Magdiwang TESDA Management System</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="layout">
+    <nav class="sidebar">
+      <h2>Magdiwang TESDA</h2>
+      <a href="#dashboard" data-page="dashboard">Dashboard</a>
+      <a href="#courses" data-page="courses">Courses</a>
+      <a href="#applicants" data-page="applicants">Applicants</a>
+      <a href="#applications" data-page="applications">Applications</a>
+      <a href="#requirements" data-page="requirements">Requirements</a>
+      <div class="spacer"></div>
+    </nav>
+    <div class="main">
+      <div class="topbar">
+        <strong id="pageTitle">Dashboard</strong>
+        <div><span id="userName"></span> <button id="logoutBtn">Log out</button></div>
+      </div>
+      <div id="content"></div>
+    </div>
+  </div>
+  <script src="js/app.js"></script>
+</body>
+</html>
