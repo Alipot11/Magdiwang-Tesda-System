@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login - Magdiwang TESDA</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <h1>Magdiwang TESDA</h1>
+      <p>Management System</p>
+      <div class="error" id="error"></div>
+      <input id="username" placeholder="Username" autofocus>
+      <div class="password-wrap">
+        <input id="password" type="password" placeholder="Password">
+        <button type="button" id="togglePw" aria-label="Show password">Show</button>
+      </div>
+      <button class="btn" id="loginBtn">Log in</button>
+    </div>
+  </div>
+
+  <script>
+    const err = document.getElementById('error');
+    async function login() {
+      err.textContent = '';
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: document.getElementById('username').value.trim(),
+          password: document.getElementById('password').value
+        })
+      });
+      if (res.ok) location.href = '/index.html';
+      else err.textContent = 'Invalid username or password';
+    }
+    document.getElementById('loginBtn').onclick = login;
+    document.addEventListener('keydown', e => { if (e.key === 'Enter') login(); });
+
+    const pw = document.getElementById('password');
+    const toggle = document.getElementById('togglePw');
+    toggle.onclick = () => {
+      const show = pw.type === 'password';
+      pw.type = show ? 'text' : 'password';
+      toggle.textContent = show ? 'Hide' : 'Show';
+      toggle.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+      pw.focus();
+    };
+  </script>
+</body>
+</html>
