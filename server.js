@@ -40,6 +40,8 @@ app.use('/api/applications', requireLogin, require('./routes/applications'));
 
 app.use('/api/requirements', requireLogin, require('./routes/requirements'));
 
+app.use('/api/dashboard', requireLogin, require('./routes/dashboard'));
+
 // Frontend
 app.get('/', (req, res) =>
   res.redirect(req.session.user ? '/index.html' : '/login.html'));

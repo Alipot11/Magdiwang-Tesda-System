@@ -1,8 +1,8 @@
 // Each feature registers a render function here as we build it
 const pages = {
-  dashboard:    () => placeholder('Dashboard and Reports'),
+  dashboard: renderDashboard,
   courses: renderCourses,
-  applicants:   renderApplicants,
+  applicants: renderApplicants,
   applications: renderApplications,
   requirements: renderRequirements,
 };
@@ -536,6 +536,64 @@ async function deleteRequirement(id) {
   const result = await api(`/api/requirements/${id}`, { method: 'DELETE' });
   if (result?.error) return alert(result.error);
   refreshRequirements();
+}
+
+// ---------- Feature 5: Dashboard and Reports ----------
+async function renderDashboard() {
+  const d = await api('/api/dashboard');
+  if (!d) return '';
+  const t = d.totals;
+
+  const card = (label, value, cls = '') =>
+    `<div class="stat ${cls}"><div class="stat-num">${value}</div><div class="stat-label">${label}</div></div>`;
+
+  const max = Math.max(1, ...Object.values(d.by_status));
+  const bars = STATUSES.map(s => `
+    <div class="bar-row">
+      <span class="bar-label">${s}</span>
+      <div class="bar-track"><div class="bar-fill ${statusColor[s]}" style="width:${(d.by_status[s] / max) * 100}%"></div></div>
+      <span class="bar-count">${d.by_status[s]}</span>
+    </div>`).join('');
+
+  const courseRows = d.courses.map(c => `
+    <tr>
+      <td>${esc(c.name)}</td>
+      <td>${esc(c.training_provider || '-')}</td>
+      <td>${statusBadge(c)}</td>
+      <td>${c.applications}</td>
+      <td>${c.approved}</td>
+      <td>${c.slots_available} / ${c.total_slots}</td>
+    </tr>`).join('');
+
+  return `
+    <div class="stats">
+      ${card('Total applicants', t.applicants)}
+      ${card('Total applications', t.applications)}
+      ${card('Pending applications', t.pending, 'blue')}
+      ${card('Incomplete requirements', t.incomplete_requirements, 'red')}
+      ${card('Approved scholars', t.approved, 'green')}
+    </div>
+
+    <div class="card" style="margin-bottom:16px">
+      <h3 style="margin-bottom:14px">Applications by status</h3>
+      ${bars}
+    </div>
+
+    <div class="card">
+      <div class="card-head">
+        <h3>Course enrollment</h3>
+        <div class="no-print">
+          <a class="btn-inline link-btn" href="/api/dashboard/export/courses.csv">Export courses (CSV)</a>
+          <a class="btn-inline link-btn" href="/api/dashboard/export/applications.csv">Export applications (CSV)</a>
+          <button class="btn-inline" onclick="window.print()">Print</button>
+        </div>
+      </div>
+      <table class="table">
+        <thead><tr><th>Course</th><th>Provider</th><th>Status</th>
+          <th>Applications</th><th>Approved</th><th>Slots (available / total)</th></tr></thead>
+        <tbody>${courseRows || '<tr><td colspan="6">No courses yet.</td></tr>'}</tbody>
+      </table>
+    </div>`;
 }
 
 init();
