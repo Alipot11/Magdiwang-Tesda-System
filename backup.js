@@ -1,3 +1,6 @@
+// This file is used to manually backup data
+// Type in terminal: node backup.js
+
 const fs = require('fs');
 const path = require('path');
 const db = require('./db');
