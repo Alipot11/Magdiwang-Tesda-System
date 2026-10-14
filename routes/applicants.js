@@ -69,4 +69,23 @@ router.delete('/:id', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+// Everything for the profile page in one request
+router.get('/:id/profile', (req, res) => {
+  const a = db.prepare('SELECT * FROM applicants WHERE id = ?').get(req.params.id);
+  if (!a) return res.status(404).json({ error: 'Applicant not found' });
+  const apps = db.prepare(`
+    SELECT a.id, a.status, a.applied_at,
+           c.name AS course_name, c.training_provider, c.start_date, c.end_date
+    FROM applications a
+    JOIN courses c ON c.id = a.course_id
+    WHERE a.applicant_id = ?
+    ORDER BY a.applied_at DESC
+  `).all(a.id);
+  const reqs = db.prepare(`
+    SELECT id, name, submitted, original_name, (file_path IS NOT NULL) AS has_file
+    FROM requirements WHERE application_id = ? ORDER BY id`);
+  apps.forEach(x => x.requirements = reqs.all(x.id));
+  res.json({ applicant: a, applications: apps });
+});
+
 module.exports = router;

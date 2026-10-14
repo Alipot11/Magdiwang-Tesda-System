@@ -125,4 +125,18 @@ router.delete('/:id', requireAdmin, (req, res) => {
   res.json({ ok: true });
 });
 
+const MIME = { '.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
+
+// Show a file inside the browser (login required, like downloads)
+router.get('/:id/preview', (req, res) => {
+  const r = db.prepare('SELECT * FROM requirements WHERE id = ?').get(req.params.id);
+  if (!r || !r.file_path) return res.status(404).json({ error: 'No file uploaded' });
+  const type = MIME[path.extname(r.file_path).toLowerCase()];
+  if (!type) return res.status(400).json({ error: 'Preview not available' });
+  res.setHeader('Content-Type', type);
+  res.setHeader('Content-Disposition', 'inline');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.sendFile(path.join(UPLOAD_DIR, r.file_path));
+});
+
 module.exports = router;
