@@ -3,7 +3,7 @@ const pages = {
   dashboard:    () => placeholder('Dashboard and Reports'),
   courses: renderCourses,
   applicants:   renderApplicants,
-  applications: () => placeholder('Application Tracking'),
+  applications: renderApplications,
   requirements: () => placeholder('Requirements Management'),
 };
 
@@ -303,6 +303,114 @@ async function viewApplicantCourses(id) {
       <div class="modal-actions"><button onclick="closeApplicantForm()">Close</button></div>
     </div>`;
   m.classList.remove('hidden');
+}
+
+// ---------- Feature 3: Application Tracking ----------
+const STATUSES = ['Received', 'Under Review', 'Incomplete', 'Qualified', 'Waitlisted', 'Approved'];
+const statusColor = {
+  'Received': 'gray', 'Under Review': 'blue', 'Incomplete': 'red',
+  'Qualified': 'blue', 'Waitlisted': 'gray', 'Approved': 'green'
+};
+let appFilter = { status: '', course_id: '' };
+
+async function renderApplications() {
+  const qs = new URLSearchParams(Object.entries(appFilter).filter(([, v]) => v)).toString();
+  const [apps, courses] = await Promise.all([
+    api('/api/applications' + (qs ? '?' + qs : '')),
+    api('/api/courses')
+  ]);
+  coursesCache = courses || [];
+  const isAdmin = window.currentUser?.role === 'admin';
+
+  const rows = (apps || []).map(a => `
+    <tr>
+      <td>${esc(a.full_name)}</td>
+      <td>${esc(a.course_name)}</td>
+      <td>${esc(a.applied_at.slice(0, 10))}</td>
+      <td>
+        <select onchange="changeStatus(${a.id}, this.value)">
+          ${STATUSES.map(s => `<option ${s === a.status ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+      </td>
+      <td class="actions">
+        ${isAdmin ? `<button class="danger" onclick="deleteApplication(${a.id})">Delete</button>` : ''}
+      </td>
+    </tr>`).join('');
+
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h3>Applications</h3>
+        <button class="btn-inline" onclick="showApplicationForm()">+ New Application</button>
+      </div>
+      <div class="filters">
+        <select onchange="setAppFilter('status', this.value)">
+          <option value="">All statuses</option>
+          ${STATUSES.map(s => `<option ${s === appFilter.status ? 'selected' : ''}>${s}</option>`).join('')}
+        </select>
+        <select onchange="setAppFilter('course_id', this.value)">
+          <option value="">All courses</option>
+          ${coursesCache.map(c => `<option value="${c.id}" ${String(c.id) === appFilter.course_id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+        </select>
+      </div>
+      <table class="table">
+        <thead><tr><th>Applicant</th><th>Course</th><th>Date applied</th><th>Status</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="5">No applications found.</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div id="applicationModal" class="modal hidden"></div>`;
+}
+
+function setAppFilter(key, value) { appFilter[key] = value; navigate(); }
+
+async function showApplicationForm() {
+  const applicants = await api('/api/applicants') || [];
+  const m = document.getElementById('applicationModal');
+  m.innerHTML = `
+    <div class="modal-box">
+      <h3>New Application</h3>
+      <div class="error" id="applicationError"></div>
+      <label>Applicant</label>
+      <select id="appApplicant">
+        <option value="">Choose applicant</option>
+        ${applicants.map(a => `<option value="${a.id}">${esc(a.full_name)}</option>`).join('')}
+      </select>
+      <label>Course</label>
+      <select id="appCourse">
+        <option value="">Choose course</option>
+        ${coursesCache.filter(c => courseStatus(c) !== 'Finished')
+          .map(c => `<option value="${c.id}">${esc(c.name)} (${c.slots_available} slots left)</option>`).join('')}
+      </select>
+      <div class="modal-actions">
+        <button onclick="closeApplicationForm()">Cancel</button>
+        <button class="btn-inline" onclick="saveApplication()">Save</button>
+      </div>
+    </div>`;
+  m.classList.remove('hidden');
+}
+
+function closeApplicationForm() { document.getElementById('applicationModal').classList.add('hidden'); }
+
+async function saveApplication() {
+  const result = await api('/api/applications', { method: 'POST', body: {
+    applicant_id: document.getElementById('appApplicant').value,
+    course_id: document.getElementById('appCourse').value
+  }});
+  if (result?.error) { document.getElementById('applicationError').textContent = result.error; return; }
+  navigate();
+}
+
+async function changeStatus(id, status) {
+  const result = await api(`/api/applications/${id}/status`, { method: 'PUT', body: { status } });
+  if (result?.error) alert(result.error);
+  navigate();   // reload so the dropdown shows the real saved status
+}
+
+async function deleteApplication(id) {
+  if (!confirm('Delete this application?')) return;
+  const result = await api(`/api/applications/${id}`, { method: 'DELETE' });
+  if (result?.error) return alert(result.error);
+  navigate();
 }
 
 init();

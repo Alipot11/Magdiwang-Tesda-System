@@ -58,3 +58,5 @@ body { font-family: system-ui, Arial, sans-serif; background: #f3f5f9; color: #1
 .modal-box select { width: 100%; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
 .search { padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; margin-right: 8px; width: 220px; }
 .modal-box.wide { width: 720px; max-width: 95vw; }
+.filters { display: flex; gap: 8px; margin-bottom: 14px; }
+.filters select, .table select { padding: 6px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }

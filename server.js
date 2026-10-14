@@ -36,6 +36,8 @@ app.use('/api/courses', requireLogin, require('./routes/courses'));
 
 app.use('/api/applicants', requireLogin, require('./routes/applicants'));
 
+app.use('/api/applications', requireLogin, require('./routes/applications'));
+
 // Frontend
 app.get('/', (req, res) =>
   res.redirect(req.session.user ? '/index.html' : '/login.html'));

@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS requirements (
 `);
 
 const courseCols = db.prepare("PRAGMA table_info(courses)").all().map(c => c.name);
-for (const col of ['start_date', 'end_date']) {
+for (const col of ['course_start', 'course_end']) {
   if (!courseCols.includes(col)) db.exec(`ALTER TABLE courses ADD COLUMN ${col} DATE`);
 }
 

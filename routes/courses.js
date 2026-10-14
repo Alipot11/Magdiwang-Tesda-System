@@ -10,7 +10,7 @@ function validate(b) {
   if (!b.name || !b.name.trim()) return 'Course name is required';
   const slots = Number(b.total_slots);
   if (!Number.isInteger(slots) || slots < 0) return 'Slots must be a whole number, 0 or more';
-  if (b.course_start && b.course_end && b.course_end < b.course_start)
+  if (b.start_date && b.end_date && b.end_date < b.start_date)
     return 'Course end date cannot be before the start date';
   return null;
 }
@@ -33,10 +33,10 @@ router.post('/', (req, res) => {
   if (err) return res.status(400).json({ error: err });
   const b = req.body;
   const info = db.prepare(`
-    INSERT INTO courses (name, training_provider, total_slots, course_start, course_end)
+    INSERT INTO courses (name, training_provider, total_slots, start_date, end_date)
     VALUES (?, ?, ?, ?, ?)`)
     .run(b.name.trim(), b.training_provider || null, Number(b.total_slots),
-         b.course_start || null, b.course_end || null);
+         b.start_date || null, b.end_date || null);
   res.json({ id: info.lastInsertRowid });
 });
 
@@ -45,10 +45,10 @@ router.put('/:id', (req, res) => {
   if (err) return res.status(400).json({ error: err });
   const b = req.body;
   const info = db.prepare(`
-    UPDATE courses SET name=?, training_provider=?, total_slots=?, course_start=?, course_end=?
+    UPDATE courses SET name=?, training_provider=?, total_slots=?, start_date=?, end_date=?
     WHERE id=?`)
     .run(b.name.trim(), b.training_provider || null, Number(b.total_slots),
-         b.course_start || null, b.course_end || null, req.params.id);
+         b.start_date || null, b.end_date || null, req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Course not found' });
   res.json({ ok: true });
 });
