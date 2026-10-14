@@ -34,6 +34,8 @@ app.get('/api/me', requireLogin, (req, res) => res.json(req.session.user));
 // Feature routes go here, e.g. app.use('/api/courses', requireLogin, require('./routes/courses'));
 app.use('/api/courses', requireLogin, require('./routes/courses'));
 
+app.use('/api/applicants', requireLogin, require('./routes/applicants'));
+
 // Frontend
 app.get('/', (req, res) =>
   res.redirect(req.session.user ? '/index.html' : '/login.html'));
