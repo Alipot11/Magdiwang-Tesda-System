@@ -5,6 +5,8 @@ const pages = {
   applicants: renderApplicants,
   applications: renderApplications,
   requirements: renderRequirements,
+  users: renderUsers,
+  applicant:    renderApplicantProfile,
 };
 
 function placeholder(name) {
@@ -23,19 +25,22 @@ async function api(url, options = {}) {
 }
 
 async function navigate() {
-  const page = (location.hash || '#dashboard').slice(1);
+  const [page, param] = (location.hash || '#dashboard').slice(1).split('/');
   const render = pages[page] || pages.dashboard;
-  document.getElementById('content').innerHTML = await render();
+  document.getElementById('content').innerHTML = await render(param);
+  const navPage = page === 'applicant' ? 'applicants' : page;
   document.getElementById('pageTitle').textContent =
-    document.querySelector(`[data-page="${page}"]`)?.textContent || 'Dashboard';
+    page === 'applicant' ? 'Applicant Profile'
+    : document.querySelector(`[data-page="${page}"]`)?.textContent || 'Dashboard';
   document.querySelectorAll('.sidebar a').forEach(a =>
-    a.classList.toggle('active', a.dataset.page === page));
+    a.classList.toggle('active', a.dataset.page === navPage));
 }
 
 async function init() {
   const user = await api('/api/me');
   if (!user) return;
   window.currentUser = user;
+  if (user.role !== 'admin') document.querySelector('[data-page="users"]')?.remove();
   document.getElementById('userName').textContent = user.username + ' ';
   window.addEventListener('hashchange', navigate);
   navigate();
@@ -178,7 +183,7 @@ function applicantRows(list) {
       <td>${esc(a.education || '-')}</td>
       <td>${a.application_count}</td>
       <td class="actions">
-        <button onclick="viewApplicantCourses(${a.id})">Courses</button>
+        <button onclick="location.hash='#applicant/${a.id}'">Profile</button>
         <button onclick="editApplicant(${a.id})">Edit</button>
         ${isAdmin ? `<button class="danger" onclick="deleteApplicant(${a.id})">Delete</button>` : ''}
       </td>
@@ -279,30 +284,6 @@ async function deleteApplicant(id) {
   const result = await api(`/api/applicants/${id}`, { method: 'DELETE' });
   if (result?.error) return alert(result.error);
   navigate();
-}
-
-async function viewApplicantCourses(id) {
-  const a = applicantsCache.find(x => x.id === id);
-  const list = await api(`/api/applicants/${id}/applications`) || [];
-  const rows = list.map(r => `
-    <tr>
-      <td>${esc(r.course_name)}</td>
-      <td>${esc(r.training_provider || '-')}</td>
-      <td>${esc(r.start_date || '-')} to ${esc(r.end_date || '-')}</td>
-      <td>${statusBadge(r)}</td>
-      <td>${esc(r.status)}</td>
-    </tr>`).join('');
-  const m = document.getElementById('applicantModal');
-  m.innerHTML = `
-    <div class="modal-box wide">
-      <h3>${esc(a.full_name)}: Courses</h3>
-      <table class="table">
-        <thead><tr><th>Course</th><th>Provider</th><th>Period</th><th>Course status</th><th>Application</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="5">No course applications yet.</td></tr>'}</tbody>
-      </table>
-      <div class="modal-actions"><button onclick="closeApplicantForm()">Close</button></div>
-    </div>`;
-  m.classList.remove('hidden');
 }
 
 // ---------- Feature 3: Application Tracking ----------
@@ -595,5 +576,270 @@ async function renderDashboard() {
       </table>
     </div>`;
 }
+
+// ---------- Users (admin only) ----------
+let usersCache = [];
+
+async function renderUsers() {
+  const list = await api('/api/users');
+  if (!Array.isArray(list)) return '<div class="card"><h3>Users</h3><p>Admin access only.</p></div>';
+  usersCache = list;
+  const me = window.currentUser.id;
+
+  const rows = list.map(u => `
+    <tr>
+      <td>${esc(u.username)}${u.id === me ? ' <span class="badge gray">You</span>' : ''}</td>
+      <td>
+        <select ${u.id === me ? 'disabled' : ''} onchange="changeUserRole(${u.id}, this.value)">
+          <option value="staff" ${u.role === 'staff' ? 'selected' : ''}>staff</option>
+          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>admin</option>
+        </select>
+      </td>
+      <td class="actions">
+        <button onclick="showEditUserForm(${u.id})">Edit</button>
+        <button onclick="showPasswordForm(${u.id})">Reset password</button>
+        ${u.id === me ? '' : `<button class="danger" onclick="deleteUser(${u.id})">Delete</button>`}
+      </td>
+    </tr>`).join('');
+
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h3>Users</h3>
+        <button class="btn-inline" onclick="showUserForm()">+ Add User</button>
+      </div>
+      <table class="table">
+        <thead><tr><th>Username</th><th>Role</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>
+    <div id="userModal" class="modal hidden"></div>`;
+}
+
+const USERNAME_HINT = `
+  <div class="hint">
+    <strong>Username rules</strong>
+    <ul>
+      <li>At least 3 characters</li>
+      <li>Letters, numbers, dot ( . ), dash ( - ) and underscore ( _ ) only, no spaces</li>
+      <li>Must not already be used by another account</li>
+    </ul>
+  </div>`;
+
+const PASSWORD_HINT = `
+  <div class="hint">
+    <strong>Password rules</strong>
+    <ul>
+      <b>Required:</b> at least 8 characters, with at least one letter and one number
+      <li><b>Recommended:</b> mix letters, numbers and symbols, or use a short phrase</li>
+      <li><b>Avoid:</b> names, birthdates, or simple ones like 12345678</li>
+      <li>Give each staff member their own account and don't share passwords</li>
+    </ul>
+  </div>`;
+
+function passwordField(id) {
+  return `
+    <div class="password-wrap">
+      <input id="${id}" type="password" autocomplete="new-password">
+      <button type="button" onclick="togglePw('${id}', this)" aria-label="Show password">Show</button>
+    </div>`;
+}
+
+function togglePw(id, btn) {
+  const input = document.getElementById(id);
+  const show = input.type === 'password';
+  input.type = show ? 'text' : 'password';
+  btn.textContent = show ? 'Hide' : 'Show';
+  btn.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+  input.focus();
+}
+
+function showUserForm() {
+  const m = document.getElementById('userModal');
+  m.innerHTML = `
+    <div class="modal-box">
+      <h3>Add User</h3>
+      <div class="error" id="userError"></div>
+      <label>Username</label>
+      <input id="uName" autocomplete="off">
+      ${USERNAME_HINT}
+      <label>Password</label>
+      ${passwordField('uPass')}
+      ${PASSWORD_HINT}
+      <label>Role</label>
+      <select id="uRole"><option value="staff">staff</option><option value="admin">admin</option></select>
+      <div class="modal-actions">
+        <button onclick="closeUserForm()">Cancel</button>
+        <button class="btn-inline" onclick="saveUser()">Save</button>
+      </div>
+    </div>`;
+  m.classList.remove('hidden');
+}
+
+function showEditUserForm(id) {
+  const u = usersCache.find(x => x.id === id);
+  const m = document.getElementById('userModal');
+  m.innerHTML = `
+    <div class="modal-box">
+      <h3>Edit username</h3>
+      <div class="error" id="userError"></div>
+      <label>Username</label>
+      <input id="uName" autocomplete="off" value="${esc(u.username)}">
+      ${USERNAME_HINT}
+      <p class="muted" style="margin-top:10px">After you change it, this person must log in with the new username.</p>
+      <div class="modal-actions">
+        <button onclick="closeUserForm()">Cancel</button>
+        <button class="btn-inline" onclick="saveUsername(${id})">Save</button>
+      </div>
+    </div>`;
+  m.classList.remove('hidden');
+}
+
+function showPasswordForm(id) {
+  const u = usersCache.find(x => x.id === id);
+  const m = document.getElementById('userModal');
+  m.innerHTML = `
+    <div class="modal-box">
+      <h3>Reset password: ${esc(u.username)}</h3>
+      <div class="error" id="userError"></div>
+      <label>New password</label>
+      ${passwordField('uPass')}
+      ${PASSWORD_HINT}
+      <div class="modal-actions">
+        <button onclick="closeUserForm()">Cancel</button>
+        <button class="btn-inline" onclick="savePassword(${id})">Save</button>
+      </div>
+    </div>`;
+  m.classList.remove('hidden');
+}
+
+async function saveUsername(id) {
+  const result = await api(`/api/users/${id}/username`, { method: 'PUT',
+    body: { username: document.getElementById('uName').value } });
+  if (result?.error) { document.getElementById('userError').textContent = result.error; return; }
+  if (id === window.currentUser.id) {          // you renamed your own account
+    window.currentUser.username = result.username;
+    document.getElementById('userName').textContent = result.username + ' ';
+  }
+  navigate();
+}
+
+function closeUserForm() { document.getElementById('userModal').classList.add('hidden'); }
+
+async function saveUser() {
+  const result = await api('/api/users', { method: 'POST', body: {
+    username: document.getElementById('uName').value,
+    password: document.getElementById('uPass').value,
+    role: document.getElementById('uRole').value
+  }});
+  if (result?.error) { document.getElementById('userError').textContent = result.error; return; }
+  navigate();
+}
+
+async function savePassword(id) {
+  const result = await api(`/api/users/${id}/password`, { method: 'PUT',
+    body: { password: document.getElementById('uPass').value } });
+  if (result?.error) { document.getElementById('userError').textContent = result.error; return; }
+  closeUserForm();
+  alert('Password updated.');
+}
+
+async function changeUserRole(id, role) {
+  const result = await api(`/api/users/${id}/role`, { method: 'PUT', body: { role } });
+  if (result?.error) alert(result.error);
+  navigate();
+}
+
+async function deleteUser(id) {
+  if (!confirm('Delete this user? They will no longer be able to log in.')) return;
+  const result = await api(`/api/users/${id}`, { method: 'DELETE' });
+  if (result?.error) return alert(result.error);
+  navigate();
+}
+
+// ---------- Applicant Profile page ----------
+const isImage = name => /\.(jpe?g|png)$/i.test(name || '');
+const isPdf = name => /\.pdf$/i.test(name || '');
+
+function enrollmentBadge(c) {
+  if (c.status !== 'Approved') return '';
+  return courseStatus(c) === 'Finished'
+    ? '<span class="badge green">Completed</span>'
+    : '<span class="badge green">Enrolled</span>';
+}
+
+function requirementFile(r) {
+  if (!r.has_file) return '<span class="muted">No file</span>';
+  const base = `/api/requirements/${r.id}`;
+  if (isImage(r.original_name))
+    return `<img class="thumb" src="${base}/preview" alt="${esc(r.name)}" onclick="openImage('${base}/preview')">
+            <a href="${base}/download">Download</a>`;
+  if (isPdf(r.original_name))
+    return `<a href="${base}/preview" target="_blank">View PDF</a> &middot; <a href="${base}/download">Download</a>`;
+  return `<a href="${base}/download">${esc(r.original_name)}</a>`;
+}
+
+async function renderApplicantProfile(id) {
+  const p = await api(`/api/applicants/${id}/profile`);
+  if (!p || p.error)
+    return '<div class="card"><p>Applicant not found.</p><p><a href="#applicants">Back to applicants</a></p></div>';
+  const a = p.applicant;
+  const field = (label, value) =>
+    `<div><div class="field-label">${label}</div><div>${esc(value || '-')}</div></div>`;
+
+  const courseCards = p.applications.map(c => {
+    const done = c.requirements.filter(r => r.submitted).length;
+    const rows = c.requirements.map(r => `
+      <tr>
+        <td>${esc(r.name)}</td>
+        <td>${r.submitted ? '<span class="badge green">Submitted</span>' : '<span class="badge red">Missing</span>'}</td>
+        <td>${requirementFile(r)}</td>
+      </tr>`).join('');
+    return `
+      <div class="card" style="margin-top:16px">
+        <div class="card-head">
+          <div>
+            <h3>${esc(c.course_name)}</h3>
+            <div class="muted">${esc(c.training_provider || '-')} &middot;
+              ${esc(c.start_date || '-')} to ${esc(c.end_date || '-')}</div>
+          </div>
+          <div>${statusBadge(c)} <span class="badge blue">${esc(c.status)}</span> ${enrollmentBadge(c)}</div>
+        </div>
+        ${c.requirements.length ? `
+          <p class="muted" style="margin-bottom:8px">Requirements: ${done} of ${c.requirements.length} submitted</p>
+          <table class="table">
+            <thead><tr><th>Requirement</th><th>Status</th><th>Scanned file</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>`
+        : '<p class="muted">Requirement checklist not started. Open the Requirements page to start it.</p>'}
+      </div>`;
+  }).join('') || '<div class="card" style="margin-top:16px"><p class="muted">No course applications yet.</p></div>';
+
+  return `
+    <a class="back-link" href="#applicants">&larr; Back to applicants</a>
+    <div class="card">
+      <h3 style="margin-bottom:14px">${esc(a.full_name)}</h3>
+      <div class="profile-grid">
+        ${field('Birthdate', a.birthdate)}
+        ${field('Age', String(calcAge(a.birthdate)))}
+        ${field('Sex', a.sex)}
+        ${field('Contact number', a.contact)}
+        ${field('Email', a.email)}
+        ${field('Address', a.address)}
+        ${field('Educational attainment', a.education)}
+        ${field('Registered', (a.created_at || '').slice(0, 10))}
+      </div>
+    </div>
+    <h3 style="margin:20px 0 0">Courses and requirements</h3>
+    ${courseCards}
+    <div id="imageModal" class="modal hidden" onclick="closeImage()"></div>`;
+}
+
+function openImage(src) {
+  const m = document.getElementById('imageModal');
+  m.innerHTML = `<img class="modal-img" src="${src}" alt="Scanned document">`;
+  m.classList.remove('hidden');
+}
+function closeImage() { document.getElementById('imageModal').classList.add('hidden'); }
 
 init();
