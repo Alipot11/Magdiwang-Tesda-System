@@ -60,3 +60,8 @@ body { font-family: system-ui, Arial, sans-serif; background: #f3f5f9; color: #1
 .modal-box.wide { width: 720px; max-width: 95vw; }
 .filters { display: flex; gap: 8px; margin-bottom: 14px; }
 .filters select, .table select { padding: 6px; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
+.modal-box.wide { max-height: 85vh; overflow-y: auto; }
+.muted { color: #9ca3af; font-size: 13px; }
+.upload-btn { display: inline-block; margin-right: 6px; padding: 4px 10px; border: 1px solid #d1d5db; background: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.req-add { display: flex; gap: 8px; margin-top: 14px; }
+.req-add input { flex: 1; padding: 8px; border: 1px solid #d1d5db; border-radius: 6px; }

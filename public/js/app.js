@@ -4,7 +4,7 @@ const pages = {
   courses: renderCourses,
   applicants:   renderApplicants,
   applications: renderApplications,
-  requirements: () => placeholder('Requirements Management'),
+  requirements: renderRequirements,
 };
 
 function placeholder(name) {
@@ -411,6 +411,131 @@ async function deleteApplication(id) {
   const result = await api(`/api/applications/${id}`, { method: 'DELETE' });
   if (result?.error) return alert(result.error);
   navigate();
+}
+
+// ---------- Feature 4: Requirements Management ----------
+let reqOverview = [];
+let reqOnlyIncomplete = false;
+let currentReqApp = null;
+
+async function renderRequirements() {
+  reqOverview = await api('/api/requirements/overview') || [];
+  const shown = reqOnlyIncomplete
+    ? reqOverview.filter(a => a.total === 0 || a.submitted < a.total)
+    : reqOverview;
+
+  const rows = shown.map(a => {
+    const badge = a.total === 0 ? '<span class="badge gray">Not started</span>'
+      : a.submitted === a.total ? '<span class="badge green">Complete</span>'
+      : '<span class="badge red">Incomplete</span>';
+    return `
+      <tr>
+        <td>${esc(a.full_name)}</td>
+        <td>${esc(a.course_name)}</td>
+        <td>${esc(a.status)}</td>
+        <td>${a.submitted} / ${a.total}</td>
+        <td>${badge}</td>
+        <td class="actions"><button onclick="showRequirements(${a.application_id})">Manage</button></td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <div class="card">
+      <div class="card-head">
+        <h3>Requirements</h3>
+        <label><input type="checkbox" ${reqOnlyIncomplete ? 'checked' : ''}
+          onchange="reqOnlyIncomplete = this.checked; navigate()"> Show incomplete only</label>
+      </div>
+      <table class="table">
+        <thead><tr><th>Applicant</th><th>Course</th><th>Application status</th>
+          <th>Submitted</th><th>Requirements</th><th></th></tr></thead>
+        <tbody>${rows || '<tr><td colspan="6">No applications found.</td></tr>'}</tbody>
+      </table>
+    </div>
+    <div id="requirementModal" class="modal hidden"></div>`;
+}
+
+async function showRequirements(appId) {
+  currentReqApp = reqOverview.find(a => a.application_id === appId) || currentReqApp;
+  const list = await api(`/api/requirements/application/${appId}`) || [];
+  const isAdmin = window.currentUser?.role === 'admin';
+
+  const rows = list.map(r => `
+    <tr>
+      <td>${esc(r.name)}</td>
+      <td><input type="checkbox" ${r.submitted ? 'checked' : ''}
+           onchange="toggleRequirement(${r.id}, this.checked)"></td>
+      <td>${r.file_path
+        ? `<a href="/api/requirements/${r.id}/download">${esc(r.original_name)}</a>`
+        : '<span class="muted">No file</span>'}</td>
+      <td class="actions">
+        <label class="upload-btn">${r.file_path ? 'Replace' : 'Upload'}
+          <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png"
+                 onchange="uploadRequirement(${r.id}, this)"></label>
+        ${r.file_path ? `<button onclick="removeRequirementFile(${r.id})">Remove file</button>` : ''}
+        ${isAdmin ? `<button class="danger" onclick="deleteRequirement(${r.id})">Delete</button>` : ''}
+      </td>
+    </tr>`).join('');
+
+  const m = document.getElementById('requirementModal');
+  m.innerHTML = `
+    <div class="modal-box wide">
+      <h3>${esc(currentReqApp.full_name)}: ${esc(currentReqApp.course_name)}</h3>
+      <table class="table">
+        <thead><tr><th>Requirement</th><th>Submitted</th><th>Scanned file</th><th></th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="req-add">
+        <input id="newReqName" placeholder="Add another requirement">
+        <button class="btn-inline" onclick="addRequirement()">Add</button>
+      </div>
+      <div class="modal-actions"><button onclick="closeRequirements()">Close</button></div>
+    </div>`;
+  m.classList.remove('hidden');
+}
+
+function closeRequirements() { navigate(); }   // reload the page so the counts refresh
+
+function refreshRequirements() { return showRequirements(currentReqApp.application_id); }
+
+async function toggleRequirement(id, submitted) {
+  const result = await api(`/api/requirements/${id}/submitted`, { method: 'PUT', body: { submitted } });
+  if (result?.error) alert(result.error);
+  refreshRequirements();
+}
+
+async function uploadRequirement(id, input) {
+  const file = input.files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`/api/requirements/${id}/upload`, { method: 'POST', body: fd });
+  if (res.status === 401) { location.href = '/login.html'; return; }
+  const data = await res.json();
+  if (data.error) alert(data.error);
+  refreshRequirements();
+}
+
+async function removeRequirementFile(id) {
+  if (!confirm('Remove the uploaded file?')) return;
+  const result = await api(`/api/requirements/${id}/file`, { method: 'DELETE' });
+  if (result?.error) alert(result.error);
+  refreshRequirements();
+}
+
+async function addRequirement() {
+  const name = document.getElementById('newReqName').value;
+  const result = await api(`/api/requirements/application/${currentReqApp.application_id}`,
+                           { method: 'POST', body: { name } });
+  if (result?.error) return alert(result.error);
+  refreshRequirements();
+}
+
+async function deleteRequirement(id) {
+  if (!confirm('Delete this requirement?')) return;
+  const result = await api(`/api/requirements/${id}`, { method: 'DELETE' });
+  if (result?.error) return alert(result.error);
+  refreshRequirements();
 }
 
 init();

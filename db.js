@@ -57,4 +57,9 @@ for (const [col, type] of [['sex', 'TEXT'], ['email', 'TEXT'], ['education', 'TE
   if (!applicantCols.includes(col)) db.exec(`ALTER TABLE applicants ADD COLUMN ${col} ${type}`);
 }
 
+const reqCols = db.prepare("PRAGMA table_info(requirements)").all().map(c => c.name);
+for (const [col, type] of [['original_name', 'TEXT'], ['uploaded_at', 'DATETIME']]) {
+  if (!reqCols.includes(col)) db.exec(`ALTER TABLE requirements ADD COLUMN ${col} ${type}`);
+}
+
 module.exports = db;

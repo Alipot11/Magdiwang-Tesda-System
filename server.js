@@ -38,6 +38,8 @@ app.use('/api/applicants', requireLogin, require('./routes/applicants'));
 
 app.use('/api/applications', requireLogin, require('./routes/applications'));
 
+app.use('/api/requirements', requireLogin, require('./routes/requirements'));
+
 // Frontend
 app.get('/', (req, res) =>
   res.redirect(req.session.user ? '/index.html' : '/login.html'));
@@ -45,3 +47,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // '0.0.0.0' lets other PCs on your network connect
 app.listen(3000, '0.0.0.0', () => console.log('Running on port 3000'));
+
+const cron = require('node-cron');
+const { runBackup } = require('./backup');
+cron.schedule('0 16 * * *', () =>        // every day at 6:00 PM (PC time)
+  runBackup().catch(e => console.error('Backup failed:', e)));
