@@ -3,3 +3,8 @@
 
 # Node
 node_modules/
+
+# Data
+data/
+uploads/
+backups/
