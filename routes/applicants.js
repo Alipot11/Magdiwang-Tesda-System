@@ -81,10 +81,14 @@ router.get('/:id/profile', (req, res) => {
     WHERE a.applicant_id = ?
     ORDER BY a.applied_at DESC
   `).all(a.id);
-  const reqs = db.prepare(`
-    SELECT id, name, submitted, original_name, (file_path IS NOT NULL) AS has_file
-    FROM requirements WHERE application_id = ? ORDER BY id`);
-  apps.forEach(x => x.requirements = reqs.all(x.id));
+  const reqs = db.prepare(
+    'SELECT id, name, submitted FROM requirements WHERE application_id = ? ORDER BY id');
+  const files = db.prepare(
+    'SELECT id, original_name FROM requirement_files WHERE requirement_id = ? ORDER BY id');
+  apps.forEach(x => {
+    x.requirements = reqs.all(x.id);
+    x.requirements.forEach(r => r.files = files.all(r.id));
+  });
   res.json({ applicant: a, applications: apps });
 });
 

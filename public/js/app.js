@@ -774,8 +774,9 @@ function enrollmentBadge(c) {
 }
 
 function requirementFile(r) {
-  if (!r.files.length) return '<span class="muted">No file</span>';
-  return r.files.map(f => {
+  const files = r.files || [];
+  if (!files.length) return '<span class="muted">No file</span>';
+  return files.map(f => {
     const base = `/api/requirements/files/${f.id}`;
     if (isImage(f.original_name))
       return `<div class="file-item"><img class="thumb" src="${base}/preview" alt="${esc(r.name)}"
