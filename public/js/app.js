@@ -83,7 +83,10 @@ async function renderCourses() {
     <tr>
       <td>${esc(c.name)}</td>
       <td>${esc(c.training_provider)}</td>
-      <td>${c.slots_available} / ${c.total_slots}</td>
+      <td>${c.total_slots}</td>
+      <td>${c.applications}</td>
+      <td>${c.slots_taken}</td>
+      <td><strong>${c.slots_available}</strong></td>
       <td>${esc(c.start_date || '-')} to ${esc(c.end_date || '-')}</td>
       <td>${statusBadge(c)}</td>
       <td class="actions">
@@ -104,10 +107,10 @@ async function renderCourses() {
       </div>
       <table class="table">
         <thead><tr>
-          <th>Course</th><th>Training Provider</th><th>Slots (available / total)</th>
-          <th>Course Period</th><th>Status</th><th></th>
+          <th>Course</th><th>Training Provider</th><th>Total slots</th><th>Applications</th>
+          <th>Approved</th><th>Slots available</th><th>Course Period</th><th>Status</th><th></th>
         </tr></thead>
-        <tbody>${rows || '<tr><td colspan="6">No courses in this view.</td></tr>'}</tbody>
+        <tbody>${rows || '<tr><td colspan="9">No courses in this view.</td></tr>'}</tbody>
       </table>
     </div>
     <div id="courseModal" class="modal hidden"></div>`;
