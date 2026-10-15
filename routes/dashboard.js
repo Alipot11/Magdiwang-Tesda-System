@@ -20,26 +20,42 @@ function courseEnrollment() {
 }
 
 router.get('/', (req, res) => {
-  const one = sql => db.prepare(sql).get().n;
+  const courseId = Number(req.query.course_id) || 0;
+  const where = courseId ? 'WHERE a.course_id = ?' : '';
+  const params = courseId ? [courseId] : [];
+  const one = (sql, ...p) => db.prepare(sql).get(...p).n;
+
   const byStatus = Object.fromEntries(STATUSES.map(s => [s, 0]));
-  db.prepare('SELECT status, COUNT(*) AS n FROM applications GROUP BY status').all()
-    .forEach(r => byStatus[r.status] = r.n);
+  db.prepare(`SELECT a.status, COUNT(*) AS n FROM applications a ${where} GROUP BY a.status`)
+    .all(...params).forEach(r => byStatus[r.status] = r.n);
+
+  // Per-course breakdown (always all courses, used by the table)
+  const courses = courseEnrollment();
+  courses.forEach(c => c.by_status = Object.fromEntries(STATUSES.map(s => [s, 0])));
+  db.prepare('SELECT course_id, status, COUNT(*) AS n FROM applications GROUP BY course_id, status')
+    .all().forEach(r => {
+      const c = courses.find(x => x.id === r.course_id);
+      if (c) c.by_status[r.status] = r.n;
+    });
 
   res.json({
     totals: {
-      applicants: one('SELECT COUNT(*) AS n FROM applicants'),
-      applications: one('SELECT COUNT(*) AS n FROM applications'),
+      applicants: courseId
+        ? one('SELECT COUNT(DISTINCT applicant_id) AS n FROM applications WHERE course_id = ?', courseId)
+        : one('SELECT COUNT(*) AS n FROM applicants'),
+      applications: Object.values(byStatus).reduce((a, b) => a + b, 0),
       pending: PENDING.reduce((sum, s) => sum + byStatus[s], 0),
       approved: byStatus['Approved'],
       incomplete_requirements: one(`
         SELECT COUNT(*) AS n FROM (
           SELECT COUNT(r.id) AS t, COALESCE(SUM(r.submitted), 0) AS s
           FROM applications a LEFT JOIN requirements r ON r.application_id = a.id
+          ${where}
           GROUP BY a.id
-        ) WHERE t = 0 OR s < t`)
+        ) WHERE t = 0 OR s < t`, ...params)
     },
     by_status: byStatus,
-    courses: courseEnrollment()
+    courses
   });
 });
 
@@ -57,6 +73,7 @@ function sendCsv(res, filename, header, rows) {
 }
 
 router.get('/export/applications.csv', (req, res) => {
+  const courseId = Number(req.query.course_id) || 0;
   const rows = db.prepare(`
     SELECT ap.full_name, ap.contact, c.name AS course, a.status, a.applied_at,
            (SELECT COUNT(*) FROM requirements r WHERE r.application_id = a.id) AS req_total,
@@ -64,8 +81,9 @@ router.get('/export/applications.csv', (req, res) => {
     FROM applications a
     JOIN applicants ap ON ap.id = a.applicant_id
     JOIN courses c ON c.id = a.course_id
+    ${courseId ? 'WHERE a.course_id = ?' : ''}
     ORDER BY c.name, ap.full_name
-  `).all();
+  `).all(...(courseId ? [courseId] : []));
   sendCsv(res, 'applications.csv',
     ['Applicant', 'Contact', 'Course', 'Status', 'Date applied', 'Requirements submitted', 'Requirements total'],
     rows.map(r => [r.full_name, r.contact, r.course, r.status, r.applied_at.slice(0, 10), r.req_done, r.req_total]));

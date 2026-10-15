@@ -542,9 +542,14 @@ async function deleteRequirement(id) {
 }
 
 // ---------- Feature 5: Dashboard and Reports ----------
+let dashCourse = '';
+function setDashCourse(v) { dashCourse = String(v || ''); navigate(); }
+
 async function renderDashboard() {
-  const d = await api('/api/dashboard');
+  const d = await api('/api/dashboard' + (dashCourse ? `?course_id=${dashCourse}` : ''));
   if (!d) return '';
+  const selected = d.courses.find(c => String(c.id) === dashCourse);
+  if (dashCourse && !selected) { dashCourse = ''; return renderDashboard(); }   // course was deleted
   const t = d.totals;
 
   const card = (label, value, cls = '') =>
@@ -559,18 +564,27 @@ async function renderDashboard() {
     </div>`).join('');
 
   const courseRows = d.courses.map(c => `
-    <tr>
-      <td>${esc(c.name)}</td>
-      <td>${esc(c.training_provider || '-')}</td>
+    <tr class="${String(c.id) === dashCourse ? 'row-selected' : ''}">
+      <td><a class="course-link" title="Show data for this course" href="#dashboard" onclick="setDashCourse(${c.id}); return false;">${esc(c.name)}</a></td>
       <td>${statusBadge(c)}</td>
-      <td>${c.applications}</td>
-      <td>${c.approved}</td>
+      ${STATUSES.map(s => `<td>${c.by_status[s]}</td>`).join('')}
+      <td><strong>${c.applications}</strong></td>
       <td>${c.slots_available} / ${c.total_slots}</td>
     </tr>`).join('');
 
+  const csvSuffix = dashCourse ? `?course_id=${dashCourse}` : '';
+
   return `
+    <div class="filters no-print">
+      <label>Show data for</label>
+      <select onchange="setDashCourse(this.value)">
+        <option value="">All courses</option>
+        ${d.courses.map(c => `<option value="${c.id}" ${String(c.id) === dashCourse ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+      </select>
+    </div>
+
     <div class="stats">
-      ${card('Total applicants', t.applicants)}
+      ${card(selected ? 'Applicants in this course' : 'Total applicants', t.applicants)}
       ${card('Total applications', t.applications)}
       ${card('Pending applications', t.pending, 'blue')}
       ${card('Incomplete requirements', t.incomplete_requirements, 'red')}
@@ -578,24 +592,27 @@ async function renderDashboard() {
     </div>
 
     <div class="card" style="margin-bottom:16px">
-      <h3 style="margin-bottom:14px">Applications by status</h3>
+      <h3 style="margin-bottom:14px">Applications by status${selected ? ': ' + esc(selected.name) : ''}</h3>
       ${bars}
     </div>
 
     <div class="card">
       <div class="card-head">
-        <h3>Course enrollment</h3>
+        <h3>Breakdown by course</h3>
         <div class="no-print">
           <a class="btn-inline link-btn" href="/api/dashboard/export/courses.csv">Export courses (CSV)</a>
-          <a class="btn-inline link-btn" href="/api/dashboard/export/applications.csv">Export applications (CSV)</a>
+          <a class="btn-inline link-btn" href="/api/dashboard/export/applications.csv${csvSuffix}">Export applications (CSV)</a>
           <button class="btn-inline" onclick="window.print()">Print</button>
         </div>
       </div>
-      <table class="table">
-        <thead><tr><th>Course</th><th>Provider</th><th>Status</th>
-          <th>Applications</th><th>Approved</th><th>Slots (available / total)</th></tr></thead>
-        <tbody>${courseRows || '<tr><td colspan="6">No courses yet.</td></tr>'}</tbody>
-      </table>
+      <div style="overflow-x:auto">
+        <table class="table">
+          <thead><tr><th>Course</th><th>Course status</th>
+            ${STATUSES.map(s => `<th>${s}</th>`).join('')}
+            <th>Total</th><th>Slots (available / total)</th></tr></thead>
+          <tbody>${courseRows || '<tr><td colspan="10">No courses yet.</td></tr>'}</tbody>
+        </table>
+      </div>
     </div>`;
 }
 
