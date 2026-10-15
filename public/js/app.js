@@ -449,14 +449,17 @@ async function showRequirements(appId) {
       <td>${esc(r.name)}</td>
       <td><input type="checkbox" ${r.submitted ? 'checked' : ''}
            onchange="toggleRequirement(${r.id}, this.checked)"></td>
-      <td>${r.file_path
-        ? `<a href="/api/requirements/${r.id}/download">${esc(r.original_name)}</a>`
+      <td>${r.files.length
+        ? r.files.map(f => `
+            <div class="file-line">
+              <a href="/api/requirements/files/${f.id}/download">${esc(f.original_name)}</a>
+              <button class="link-danger" onclick="removeRequirementFile(${f.id})">Remove</button>
+            </div>`).join('')
         : '<span class="muted">No file</span>'}</td>
       <td class="actions">
-        <label class="upload-btn">${r.file_path ? 'Replace' : 'Upload'}
-          <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png"
+        <label class="upload-btn">Add files
+          <input type="file" hidden multiple accept=".pdf,.jpg,.jpeg,.png"
                  onchange="uploadRequirement(${r.id}, this)"></label>
-        ${r.file_path ? `<button onclick="removeRequirementFile(${r.id})">Remove file</button>` : ''}
         ${isAdmin ? `<button class="danger" onclick="deleteRequirement(${r.id})">Delete</button>` : ''}
       </td>
     </tr>`).join('');
@@ -489,10 +492,9 @@ async function toggleRequirement(id, submitted) {
 }
 
 async function uploadRequirement(id, input) {
-  const file = input.files[0];
-  if (!file) return;
+  if (!input.files.length) return;
   const fd = new FormData();
-  fd.append('file', file);
+  [...input.files].forEach(f => fd.append('files', f));
   const res = await fetch(`/api/requirements/${id}/upload`, { method: 'POST', body: fd });
   if (res.status === 401) { location.href = '/login.html'; return; }
   const data = await res.json();
@@ -500,9 +502,9 @@ async function uploadRequirement(id, input) {
   refreshRequirements();
 }
 
-async function removeRequirementFile(id) {
-  if (!confirm('Remove the uploaded file?')) return;
-  const result = await api(`/api/requirements/${id}/file`, { method: 'DELETE' });
+async function removeRequirementFile(fileId) {
+  if (!confirm('Remove this file?')) return;
+  const result = await api(`/api/requirements/files/${fileId}`, { method: 'DELETE' });
   if (result?.error) alert(result.error);
   refreshRequirements();
 }
@@ -772,14 +774,17 @@ function enrollmentBadge(c) {
 }
 
 function requirementFile(r) {
-  if (!r.has_file) return '<span class="muted">No file</span>';
-  const base = `/api/requirements/${r.id}`;
-  if (isImage(r.original_name))
-    return `<img class="thumb" src="${base}/preview" alt="${esc(r.name)}" onclick="openImage('${base}/preview')">
-            <a href="${base}/download">Download</a>`;
-  if (isPdf(r.original_name))
-    return `<a href="${base}/preview" target="_blank">View PDF</a> &middot; <a href="${base}/download">Download</a>`;
-  return `<a href="${base}/download">${esc(r.original_name)}</a>`;
+  if (!r.files.length) return '<span class="muted">No file</span>';
+  return r.files.map(f => {
+    const base = `/api/requirements/files/${f.id}`;
+    if (isImage(f.original_name))
+      return `<div class="file-item"><img class="thumb" src="${base}/preview" alt="${esc(r.name)}"
+                onclick="openImage('${base}/preview')"><br><a href="${base}/download">Download</a></div>`;
+    if (isPdf(f.original_name))
+      return `<div class="file-item"><a href="${base}/preview" target="_blank">View PDF</a><br>
+                <a href="${base}/download">Download</a></div>`;
+    return `<div class="file-item"><a href="${base}/download">${esc(f.original_name)}</a></div>`;
+  }).join('');
 }
 
 async function renderApplicantProfile(id) {

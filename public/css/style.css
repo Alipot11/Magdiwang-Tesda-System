@@ -91,6 +91,9 @@ body { font-family: system-ui, Arial, sans-serif; background: #f3f5f9; color: #1
 .modal-img { max-width: 90vw; max-height: 90vh; border-radius: 8px; background: #fff; }
 .modal-box .password-wrap { margin-bottom: 0; }
 .modal-box .password-wrap input { padding-right: 60px; }
+.file-line { margin-bottom: 4px; font-size: 13px; }
+.link-danger { background: none; border: 0; color: #b91c1c; cursor: pointer; font-size: 12px; }
+.file-item { display: inline-block; margin: 0 10px 6px 0; text-align: center; font-size: 12px; vertical-align: top; }
 
 @media print {
   .sidebar, .topbar, .no-print { display: none !important; }

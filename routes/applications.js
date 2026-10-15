@@ -57,6 +57,13 @@ router.put('/:id/status', (req, res) => {
 
 router.delete('/:id', (req, res) => {
   if (req.session.user.role !== 'admin') return res.status(403).json({ error: 'Admin only' });
+  const fs = require('fs'), path = require('path');
+  db.prepare(`SELECT f.file_path FROM requirement_files f
+              JOIN requirements r ON r.id = f.requirement_id
+              WHERE r.application_id = ?`).all(req.params.id)
+    .forEach(f => fs.unlink(path.join(__dirname, '..', 'uploads', f.file_path), () => {}));
+  db.prepare(`DELETE FROM requirement_files WHERE requirement_id IN
+              (SELECT id FROM requirements WHERE application_id = ?)`).run(req.params.id);
   db.prepare('DELETE FROM requirements WHERE application_id = ?').run(req.params.id);
   db.prepare('DELETE FROM applications WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
