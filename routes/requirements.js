@@ -46,14 +46,15 @@ const fileRow = id => db.prepare('SELECT * FROM requirement_files WHERE id = ?')
 // Overview: every application with its submitted / total requirement counts
 router.get('/overview', (req, res) => {
   res.json(db.prepare(`
-    SELECT a.id AS application_id, a.status, ap.full_name, c.name AS course_name,
+    SELECT a.id AS application_id, a.status, ap.full_name,
+           c.id AS course_id, c.name AS course_name,
            COUNT(r.id) AS total, COALESCE(SUM(r.submitted), 0) AS submitted
     FROM applications a
     JOIN applicants ap ON ap.id = a.applicant_id
     JOIN courses c ON c.id = a.course_id
     LEFT JOIN requirements r ON r.application_id = a.id
     GROUP BY a.id
-    ORDER BY ap.full_name
+    ORDER BY c.name, ap.full_name
   `).all());
 });
 

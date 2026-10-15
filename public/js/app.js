@@ -408,19 +408,40 @@ async function renderRequirements() {
     ? reqOverview.filter(a => a.total === 0 || a.submitted < a.total)
     : reqOverview;
 
-  const rows = shown.map(a => {
+  // Group the applications by course
+  const groups = new Map();
+  shown.forEach(a => {
+    if (!groups.has(a.course_id)) groups.set(a.course_id, { name: a.course_name, items: [] });
+    groups.get(a.course_id).items.push(a);
+  });
+
+  const row = a => {
     const badge = a.total === 0 ? '<span class="badge gray">Not started</span>'
       : a.submitted === a.total ? '<span class="badge green">Complete</span>'
       : '<span class="badge red">Incomplete</span>';
     return `
       <tr>
         <td>${esc(a.full_name)}</td>
-        <td>${esc(a.course_name)}</td>
         <td>${esc(a.status)}</td>
         <td>${a.submitted} / ${a.total}</td>
         <td>${badge}</td>
         <td class="actions"><button onclick="showRequirements(${a.application_id})">Manage</button></td>
       </tr>`;
+  };
+
+  const sections = [...groups.entries()].map(([courseId, g]) => {
+    const all = reqOverview.filter(x => x.course_id === courseId);   // counts ignore the filter
+    const complete = all.filter(x => x.total > 0 && x.submitted === x.total).length;
+    return `
+      <details class="course-group" open>
+        <summary><strong>${esc(g.name)}</strong>
+          <span class="muted">${all.length} application(s) &middot; ${complete} complete</span></summary>
+        <table class="table">
+          <thead><tr><th>Applicant</th><th>Application status</th>
+            <th>Submitted</th><th>Requirements</th><th></th></tr></thead>
+          <tbody>${g.items.map(row).join('')}</tbody>
+        </table>
+      </details>`;
   }).join('');
 
   return `
@@ -430,11 +451,7 @@ async function renderRequirements() {
         <label><input type="checkbox" ${reqOnlyIncomplete ? 'checked' : ''}
           onchange="reqOnlyIncomplete = this.checked; navigate()"> Show incomplete only</label>
       </div>
-      <table class="table">
-        <thead><tr><th>Applicant</th><th>Course</th><th>Application status</th>
-          <th>Submitted</th><th>Requirements</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="6">No applications found.</td></tr>'}</tbody>
-      </table>
+      ${sections || '<p class="muted">No applications found.</p>'}
     </div>
     <div id="requirementModal" class="modal hidden"></div>`;
 }
@@ -525,9 +542,14 @@ async function deleteRequirement(id) {
 }
 
 // ---------- Feature 5: Dashboard and Reports ----------
+let dashCourse = '';
+function setDashCourse(v) { dashCourse = String(v || ''); navigate(); }
+
 async function renderDashboard() {
-  const d = await api('/api/dashboard');
+  const d = await api('/api/dashboard' + (dashCourse ? `?course_id=${dashCourse}` : ''));
   if (!d) return '';
+  const selected = d.courses.find(c => String(c.id) === dashCourse);
+  if (dashCourse && !selected) { dashCourse = ''; return renderDashboard(); }   // course was deleted
   const t = d.totals;
 
   const card = (label, value, cls = '') =>
@@ -542,18 +564,27 @@ async function renderDashboard() {
     </div>`).join('');
 
   const courseRows = d.courses.map(c => `
-    <tr>
-      <td>${esc(c.name)}</td>
-      <td>${esc(c.training_provider || '-')}</td>
+    <tr class="${String(c.id) === dashCourse ? 'row-selected' : ''}">
+      <td><a class="course-link" title="Show data for this course" href="#dashboard" onclick="setDashCourse(${c.id}); return false;">${esc(c.name)}</a></td>
       <td>${statusBadge(c)}</td>
-      <td>${c.applications}</td>
-      <td>${c.approved}</td>
+      ${STATUSES.map(s => `<td>${c.by_status[s]}</td>`).join('')}
+      <td><strong>${c.applications}</strong></td>
       <td>${c.slots_available} / ${c.total_slots}</td>
     </tr>`).join('');
 
+  const csvSuffix = dashCourse ? `?course_id=${dashCourse}` : '';
+
   return `
+    <div class="filters no-print">
+      <label>Show data for</label>
+      <select onchange="setDashCourse(this.value)">
+        <option value="">All courses</option>
+        ${d.courses.map(c => `<option value="${c.id}" ${String(c.id) === dashCourse ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+      </select>
+    </div>
+
     <div class="stats">
-      ${card('Total applicants', t.applicants)}
+      ${card(selected ? 'Applicants in this course' : 'Total applicants', t.applicants)}
       ${card('Total applications', t.applications)}
       ${card('Pending applications', t.pending, 'blue')}
       ${card('Incomplete requirements', t.incomplete_requirements, 'red')}
@@ -561,24 +592,27 @@ async function renderDashboard() {
     </div>
 
     <div class="card" style="margin-bottom:16px">
-      <h3 style="margin-bottom:14px">Applications by status</h3>
+      <h3 style="margin-bottom:14px">Applications by status${selected ? ': ' + esc(selected.name) : ''}</h3>
       ${bars}
     </div>
 
     <div class="card">
       <div class="card-head">
-        <h3>Course enrollment</h3>
+        <h3>Breakdown by course</h3>
         <div class="no-print">
           <a class="btn-inline link-btn" href="/api/dashboard/export/courses.csv">Export courses (CSV)</a>
-          <a class="btn-inline link-btn" href="/api/dashboard/export/applications.csv">Export applications (CSV)</a>
+          <a class="btn-inline link-btn" href="/api/dashboard/export/applications.csv${csvSuffix}">Export applications (CSV)</a>
           <button class="btn-inline" onclick="window.print()">Print</button>
         </div>
       </div>
-      <table class="table">
-        <thead><tr><th>Course</th><th>Provider</th><th>Status</th>
-          <th>Applications</th><th>Approved</th><th>Slots (available / total)</th></tr></thead>
-        <tbody>${courseRows || '<tr><td colspan="6">No courses yet.</td></tr>'}</tbody>
-      </table>
+      <div style="overflow-x:auto">
+        <table class="table">
+          <thead><tr><th>Course</th><th>Course status</th>
+            ${STATUSES.map(s => `<th>${s}</th>`).join('')}
+            <th>Total</th><th>Slots (available / total)</th></tr></thead>
+          <tbody>${courseRows || '<tr><td colspan="10">No courses yet.</td></tr>'}</tbody>
+        </table>
+      </div>
     </div>`;
 }
 

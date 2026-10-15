@@ -94,6 +94,15 @@ body { font-family: system-ui, Arial, sans-serif; background: #f3f5f9; color: #1
 .file-line { margin-bottom: 4px; font-size: 13px; }
 .link-danger { background: none; border: 0; color: #b91c1c; cursor: pointer; font-size: 12px; }
 .file-item { display: inline-block; margin: 0 10px 6px 0; text-align: center; font-size: 12px; vertical-align: top; }
+.course-group { border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 14px; padding: 0 12px 8px; }
+.course-group summary { cursor: pointer; padding: 12px 0; font-size: 15px; }
+.course-group summary .muted { margin-left: 8px; }
+.row-selected { background: #eff6ff; }
+.filters label { align-self: center; font-size: 13px; color: #6b7280; }
+.table td a { color: #1d4ed8; text-decoration: none; font-weight: 600; }
+.table td a:hover { text-decoration: underline; color: #1e40af; }
+.row-selected td a { color: #1e3a8a; }
+.row-selected td:first-child { box-shadow: inset 3px 0 0 #1d4ed8; }
 
 @media print {
   .sidebar, .topbar, .no-print { display: none !important; }
