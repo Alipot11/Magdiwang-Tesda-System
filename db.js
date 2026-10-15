@@ -62,4 +62,24 @@ for (const [col, type] of [['original_name', 'TEXT'], ['uploaded_at', 'DATETIME'
   if (!reqCols.includes(col)) db.exec(`ALTER TABLE requirements ADD COLUMN ${col} ${type}`);
 }
 
+db.exec(`
+CREATE TABLE IF NOT EXISTS requirement_files (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  requirement_id INTEGER NOT NULL REFERENCES requirements(id),
+  file_path TEXT NOT NULL,
+  original_name TEXT,
+  uploaded_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+`);
+
+// Move files from the old one-file-per-requirement columns (runs once, safe to repeat)
+db.transaction(() => {
+  db.exec(`
+    INSERT INTO requirement_files (requirement_id, file_path, original_name, uploaded_at)
+    SELECT id, file_path, original_name, COALESCE(uploaded_at, CURRENT_TIMESTAMP)
+    FROM requirements WHERE file_path IS NOT NULL`);
+  db.exec(`UPDATE requirements SET file_path = NULL, original_name = NULL, uploaded_at = NULL
+           WHERE file_path IS NOT NULL`);
+})();
+
 module.exports = db;

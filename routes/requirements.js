@@ -19,6 +19,8 @@ const DEFAULT_REQUIREMENTS = [
   'Any Diploma / TOR'
 ];
 
+const MAX_FILES = 10;   // per requirement
+
 const requireAdmin = (req, res, next) =>
   req.session.user.role === 'admin' ? next() : res.status(403).json({ error: 'Admin only' });
 
@@ -29,7 +31,7 @@ const upload = multer({
     filename: (req, file, cb) =>
       cb(null, crypto.randomUUID() + path.extname(file.originalname).toLowerCase())
   }),
-  limits: { fileSize: 10 * 1024 * 1024 },   // 10 MB
+  limits: { fileSize: 10 * 1024 * 1024 },   // 10 MB each
   fileFilter: (req, file, cb) =>
     ALLOWED.includes(path.extname(file.originalname).toLowerCase())
       ? cb(null, true)
@@ -37,6 +39,9 @@ const upload = multer({
 });
 
 const removeFile = name => { if (name) fs.unlink(path.join(UPLOAD_DIR, name), () => {}); };
+const fileCount = reqId =>
+  db.prepare('SELECT COUNT(*) AS n FROM requirement_files WHERE requirement_id = ?').get(reqId).n;
+const fileRow = id => db.prepare('SELECT * FROM requirement_files WHERE id = ?').get(id);
 
 // Overview: every application with its submitted / total requirement counts
 router.get('/overview', (req, res) => {
@@ -52,17 +57,19 @@ router.get('/overview', (req, res) => {
   `).all());
 });
 
-// Requirements of one application (creates the default checklist the first time)
+// Requirements of one application, each with its files (creates the default checklist the first time)
 router.get('/application/:appId', (req, res) => {
   const appId = req.params.appId;
   if (!db.prepare('SELECT id FROM applications WHERE id = ?').get(appId))
     return res.status(404).json({ error: 'Application not found' });
-  const n = db.prepare('SELECT COUNT(*) AS n FROM requirements WHERE application_id = ?').get(appId).n;
-  if (!n) {
+  if (!db.prepare('SELECT COUNT(*) AS n FROM requirements WHERE application_id = ?').get(appId).n) {
     const ins = db.prepare('INSERT INTO requirements (application_id, name) VALUES (?, ?)');
     db.transaction(() => DEFAULT_REQUIREMENTS.forEach(name => ins.run(appId, name)))();
   }
-  res.json(db.prepare('SELECT * FROM requirements WHERE application_id = ? ORDER BY id').all(appId));
+  const list = db.prepare('SELECT id, name, submitted FROM requirements WHERE application_id = ? ORDER BY id').all(appId);
+  const files = db.prepare('SELECT id, original_name FROM requirement_files WHERE requirement_id = ? ORDER BY id');
+  list.forEach(r => r.files = files.all(r.id));
+  res.json(list);
 });
 
 // Add a custom requirement
@@ -77,66 +84,74 @@ router.post('/application/:appId', (req, res) => {
 router.put('/:id/submitted', (req, res) => {
   const r = db.prepare('SELECT * FROM requirements WHERE id = ?').get(req.params.id);
   if (!r) return res.status(404).json({ error: 'Requirement not found' });
-  if (!req.body.submitted && r.file_path)
-    return res.status(400).json({ error: 'Remove the uploaded file first' });
+  if (!req.body.submitted && fileCount(r.id))
+    return res.status(400).json({ error: 'Remove the uploaded files first' });
   db.prepare('UPDATE requirements SET submitted = ? WHERE id = ?').run(req.body.submitted ? 1 : 0, r.id);
   res.json({ ok: true });
 });
 
-// Upload a scanned document (marks the requirement as submitted)
+// Upload one or more scanned documents (marks the requirement as submitted)
 router.post('/:id/upload', (req, res) => {
-  upload.single('file')(req, res, err => {
+  upload.array('files', MAX_FILES)(req, res, err => {
     if (err) return res.status(400).json({
-      error: err.code === 'LIMIT_FILE_SIZE' ? 'File is larger than 10 MB' : err.message });
-    if (!req.file) return res.status(400).json({ error: 'Choose a file' });
+      error: err.code === 'LIMIT_FILE_SIZE' ? 'A file is larger than 10 MB'
+           : err.code === 'LIMIT_UNEXPECTED_FILE' ? `You can upload up to ${MAX_FILES} files at a time`
+           : err.message });
+    const files = req.files || [];
+    const cleanup = () => files.forEach(f => removeFile(f.filename));
+    if (!files.length) return res.status(400).json({ error: 'Choose at least one file' });
     const r = db.prepare('SELECT * FROM requirements WHERE id = ?').get(req.params.id);
-    if (!r) { removeFile(req.file.filename); return res.status(404).json({ error: 'Requirement not found' }); }
-    removeFile(r.file_path);   // replace any previous file
-    db.prepare(`UPDATE requirements
-                SET file_path = ?, original_name = ?, uploaded_at = CURRENT_TIMESTAMP, submitted = 1
-                WHERE id = ?`).run(req.file.filename, req.file.originalname, r.id);
+    if (!r) { cleanup(); return res.status(404).json({ error: 'Requirement not found' }); }
+    if (fileCount(r.id) + files.length > MAX_FILES) {
+      cleanup();
+      return res.status(400).json({ error: `A requirement can have up to ${MAX_FILES} files` });
+    }
+    const ins = db.prepare('INSERT INTO requirement_files (requirement_id, file_path, original_name) VALUES (?, ?, ?)');
+    db.transaction(() => {
+      files.forEach(f => ins.run(r.id, f.filename, f.originalname));
+      db.prepare('UPDATE requirements SET submitted = 1 WHERE id = ?').run(r.id);
+    })();
     res.json({ ok: true });
   });
 });
 
 // Authorized download: only reachable by logged-in users
-router.get('/:id/download', (req, res) => {
-  const r = db.prepare('SELECT * FROM requirements WHERE id = ?').get(req.params.id);
-  if (!r || !r.file_path) return res.status(404).json({ error: 'No file uploaded' });
-  res.download(path.join(UPLOAD_DIR, r.file_path), r.original_name);
-});
-
-router.delete('/:id/file', (req, res) => {
-  const r = db.prepare('SELECT * FROM requirements WHERE id = ?').get(req.params.id);
-  if (!r) return res.status(404).json({ error: 'Requirement not found' });
-  removeFile(r.file_path);
-  db.prepare('UPDATE requirements SET file_path = NULL, original_name = NULL, uploaded_at = NULL WHERE id = ?').run(r.id);
-  res.json({ ok: true });
-});
-
-router.delete('/:id', requireAdmin, (req, res) => {
-  const fs = require('fs'), path = require('path');
-  db.prepare('SELECT file_path FROM requirements WHERE application_id = ? AND file_path IS NOT NULL')
-    .all(req.params.id)
-    .forEach(r => fs.unlink(path.join(__dirname, '..', 'uploads', r.file_path), () => {}));
-  const r = db.prepare('SELECT * FROM requirements WHERE id = ?').get(req.params.id);
-  if (r) removeFile(r.file_path);
-  db.prepare('DELETE FROM requirements WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
+router.get('/files/:fileId/download', (req, res) => {
+  const f = fileRow(req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'File not found' });
+  res.download(path.join(UPLOAD_DIR, f.file_path), f.original_name);
 });
 
 const MIME = { '.pdf': 'application/pdf', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png' };
 
 // Show a file inside the browser (login required, like downloads)
-router.get('/:id/preview', (req, res) => {
-  const r = db.prepare('SELECT * FROM requirements WHERE id = ?').get(req.params.id);
-  if (!r || !r.file_path) return res.status(404).json({ error: 'No file uploaded' });
-  const type = MIME[path.extname(r.file_path).toLowerCase()];
+router.get('/files/:fileId/preview', (req, res) => {
+  const f = fileRow(req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'File not found' });
+  const type = MIME[path.extname(f.file_path).toLowerCase()];
   if (!type) return res.status(400).json({ error: 'Preview not available' });
   res.setHeader('Content-Type', type);
   res.setHeader('Content-Disposition', 'inline');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.sendFile(path.join(UPLOAD_DIR, r.file_path));
+  res.sendFile(path.join(UPLOAD_DIR, f.file_path));
+});
+
+// Remove one file
+router.delete('/files/:fileId', (req, res) => {
+  const f = fileRow(req.params.fileId);
+  if (!f) return res.status(404).json({ error: 'File not found' });
+  removeFile(f.file_path);
+  db.prepare('DELETE FROM requirement_files WHERE id = ?').run(f.id);
+  res.json({ ok: true });
+});
+
+// Delete a whole requirement and its files (admin)
+router.delete('/:id', requireAdmin, (req, res) => {
+  db.prepare('SELECT file_path FROM requirement_files WHERE requirement_id = ?')
+    .all(req.params.id).forEach(f => removeFile(f.file_path));
+  db.prepare('DELETE FROM requirement_files WHERE requirement_id = ?').run(req.params.id);
+  db.prepare('DELETE FROM requirements WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 module.exports = router;

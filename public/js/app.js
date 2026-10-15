@@ -83,7 +83,10 @@ async function renderCourses() {
     <tr>
       <td>${esc(c.name)}</td>
       <td>${esc(c.training_provider)}</td>
-      <td>${c.slots_available} / ${c.total_slots}</td>
+      <td>${c.total_slots}</td>
+      <td>${c.applications}</td>
+      <td>${c.slots_taken}</td>
+      <td><strong>${c.slots_available}</strong></td>
       <td>${esc(c.start_date || '-')} to ${esc(c.end_date || '-')}</td>
       <td>${statusBadge(c)}</td>
       <td class="actions">
@@ -104,10 +107,10 @@ async function renderCourses() {
       </div>
       <table class="table">
         <thead><tr>
-          <th>Course</th><th>Training Provider</th><th>Slots (available / total)</th>
-          <th>Course Period</th><th>Status</th><th></th>
+          <th>Course</th><th>Training Provider</th><th>Total slots</th><th>Applications</th>
+          <th>Approved</th><th>Slots available</th><th>Course Period</th><th>Status</th><th></th>
         </tr></thead>
-        <tbody>${rows || '<tr><td colspan="6">No courses in this view.</td></tr>'}</tbody>
+        <tbody>${rows || '<tr><td colspan="9">No courses in this view.</td></tr>'}</tbody>
       </table>
     </div>
     <div id="courseModal" class="modal hidden"></div>`;
@@ -446,14 +449,17 @@ async function showRequirements(appId) {
       <td>${esc(r.name)}</td>
       <td><input type="checkbox" ${r.submitted ? 'checked' : ''}
            onchange="toggleRequirement(${r.id}, this.checked)"></td>
-      <td>${r.file_path
-        ? `<a href="/api/requirements/${r.id}/download">${esc(r.original_name)}</a>`
+      <td>${r.files.length
+        ? r.files.map(f => `
+            <div class="file-line">
+              <a href="/api/requirements/files/${f.id}/download">${esc(f.original_name)}</a>
+              <button class="link-danger" onclick="removeRequirementFile(${f.id})">Remove</button>
+            </div>`).join('')
         : '<span class="muted">No file</span>'}</td>
       <td class="actions">
-        <label class="upload-btn">${r.file_path ? 'Replace' : 'Upload'}
-          <input type="file" hidden accept=".pdf,.jpg,.jpeg,.png"
+        <label class="upload-btn">Add files
+          <input type="file" hidden multiple accept=".pdf,.jpg,.jpeg,.png"
                  onchange="uploadRequirement(${r.id}, this)"></label>
-        ${r.file_path ? `<button onclick="removeRequirementFile(${r.id})">Remove file</button>` : ''}
         ${isAdmin ? `<button class="danger" onclick="deleteRequirement(${r.id})">Delete</button>` : ''}
       </td>
     </tr>`).join('');
@@ -486,10 +492,9 @@ async function toggleRequirement(id, submitted) {
 }
 
 async function uploadRequirement(id, input) {
-  const file = input.files[0];
-  if (!file) return;
+  if (!input.files.length) return;
   const fd = new FormData();
-  fd.append('file', file);
+  [...input.files].forEach(f => fd.append('files', f));
   const res = await fetch(`/api/requirements/${id}/upload`, { method: 'POST', body: fd });
   if (res.status === 401) { location.href = '/login.html'; return; }
   const data = await res.json();
@@ -497,9 +502,9 @@ async function uploadRequirement(id, input) {
   refreshRequirements();
 }
 
-async function removeRequirementFile(id) {
-  if (!confirm('Remove the uploaded file?')) return;
-  const result = await api(`/api/requirements/${id}/file`, { method: 'DELETE' });
+async function removeRequirementFile(fileId) {
+  if (!confirm('Remove this file?')) return;
+  const result = await api(`/api/requirements/files/${fileId}`, { method: 'DELETE' });
   if (result?.error) alert(result.error);
   refreshRequirements();
 }
@@ -769,14 +774,18 @@ function enrollmentBadge(c) {
 }
 
 function requirementFile(r) {
-  if (!r.has_file) return '<span class="muted">No file</span>';
-  const base = `/api/requirements/${r.id}`;
-  if (isImage(r.original_name))
-    return `<img class="thumb" src="${base}/preview" alt="${esc(r.name)}" onclick="openImage('${base}/preview')">
-            <a href="${base}/download">Download</a>`;
-  if (isPdf(r.original_name))
-    return `<a href="${base}/preview" target="_blank">View PDF</a> &middot; <a href="${base}/download">Download</a>`;
-  return `<a href="${base}/download">${esc(r.original_name)}</a>`;
+  const files = r.files || [];
+  if (!files.length) return '<span class="muted">No file</span>';
+  return files.map(f => {
+    const base = `/api/requirements/files/${f.id}`;
+    if (isImage(f.original_name))
+      return `<div class="file-item"><img class="thumb" src="${base}/preview" alt="${esc(r.name)}"
+                onclick="openImage('${base}/preview')"><br><a href="${base}/download">Download</a></div>`;
+    if (isPdf(f.original_name))
+      return `<div class="file-item"><a href="${base}/preview" target="_blank">View PDF</a><br>
+                <a href="${base}/download">Download</a></div>`;
+    return `<div class="file-item"><a href="${base}/download">${esc(f.original_name)}</a></div>`;
+  }).join('');
 }
 
 async function renderApplicantProfile(id) {

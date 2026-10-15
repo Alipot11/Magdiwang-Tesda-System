@@ -19,6 +19,7 @@ function validate(b) {
 router.get('/', (req, res) => {
   const rows = db.prepare(`
     SELECT c.*,
+      (SELECT COUNT(*) FROM applications a WHERE a.course_id = c.id) AS applications,
       (SELECT COUNT(*) FROM applications a
         WHERE a.course_id = c.id AND a.status = 'Approved') AS slots_taken
     FROM courses c
