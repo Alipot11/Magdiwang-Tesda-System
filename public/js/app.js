@@ -408,19 +408,40 @@ async function renderRequirements() {
     ? reqOverview.filter(a => a.total === 0 || a.submitted < a.total)
     : reqOverview;
 
-  const rows = shown.map(a => {
+  // Group the applications by course
+  const groups = new Map();
+  shown.forEach(a => {
+    if (!groups.has(a.course_id)) groups.set(a.course_id, { name: a.course_name, items: [] });
+    groups.get(a.course_id).items.push(a);
+  });
+
+  const row = a => {
     const badge = a.total === 0 ? '<span class="badge gray">Not started</span>'
       : a.submitted === a.total ? '<span class="badge green">Complete</span>'
       : '<span class="badge red">Incomplete</span>';
     return `
       <tr>
         <td>${esc(a.full_name)}</td>
-        <td>${esc(a.course_name)}</td>
         <td>${esc(a.status)}</td>
         <td>${a.submitted} / ${a.total}</td>
         <td>${badge}</td>
         <td class="actions"><button onclick="showRequirements(${a.application_id})">Manage</button></td>
       </tr>`;
+  };
+
+  const sections = [...groups.entries()].map(([courseId, g]) => {
+    const all = reqOverview.filter(x => x.course_id === courseId);   // counts ignore the filter
+    const complete = all.filter(x => x.total > 0 && x.submitted === x.total).length;
+    return `
+      <details class="course-group" open>
+        <summary><strong>${esc(g.name)}</strong>
+          <span class="muted">${all.length} application(s) &middot; ${complete} complete</span></summary>
+        <table class="table">
+          <thead><tr><th>Applicant</th><th>Application status</th>
+            <th>Submitted</th><th>Requirements</th><th></th></tr></thead>
+          <tbody>${g.items.map(row).join('')}</tbody>
+        </table>
+      </details>`;
   }).join('');
 
   return `
@@ -430,11 +451,7 @@ async function renderRequirements() {
         <label><input type="checkbox" ${reqOnlyIncomplete ? 'checked' : ''}
           onchange="reqOnlyIncomplete = this.checked; navigate()"> Show incomplete only</label>
       </div>
-      <table class="table">
-        <thead><tr><th>Applicant</th><th>Course</th><th>Application status</th>
-          <th>Submitted</th><th>Requirements</th><th></th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="6">No applications found.</td></tr>'}</tbody>
-      </table>
+      ${sections || '<p class="muted">No applications found.</p>'}
     </div>
     <div id="requirementModal" class="modal hidden"></div>`;
 }
